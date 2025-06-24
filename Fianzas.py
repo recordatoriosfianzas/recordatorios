@@ -41,7 +41,7 @@ def schedule_email(name, client_number, emails, expiry_date):
             from_email=SENDER_EMAIL,
             to_emails=email,
             subject="Guarantee Expiry Reminder",
-            plain_text_content=f"Hello {name},\n\nYour guarantee (ID: {client_number}) expires on {expiry_date.strftime('%Y-%m-%d')}.\n\n– Reminder App"
+            plain_text_content=f"Hello,\n\nYour guarantee with client {name} (ID: {client_number}) expires on {expiry_date.strftime('%Y-%m-%d')}.\n\n"
         )
 
         try:
