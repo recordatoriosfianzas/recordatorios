@@ -2,7 +2,8 @@ name: Send Daily Reminders
 
 on:
   schedule:
-    - cron: '0 13 * * *'  # Every day at 8 AM EST (13:00 UTC)
+     - cron: '*/1 * * * *'  # every 1 minute (for testing)
+  # Every day at 8 AM EST (13:00 UTC)
   workflow_dispatch:
 
 jobs:
