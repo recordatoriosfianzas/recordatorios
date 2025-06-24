@@ -6,7 +6,7 @@ from sendgrid.helpers.mail import Mail
 import os
 
 # Set up SendGrid API Key
-SENDGRID_API_KEY = "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"
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 SENDER_EMAIL = "recordatoriosfianzas@gmail.com"
 CSV_FILE = "reminders.csv"
 
