@@ -49,4 +49,6 @@ if st.button("Schedule"):
         st.success(f"Reminder saved. Emails will be sent on {send_on}.")
     else:
         st.warning("Please fill in all fields.")
-
+if os.path.exists(CSV_FILE):
+    with open(CSV_FILE, "rb") as file:
+        st.download_button("📥 Download Reminders CSV", file, file_name="reminders.csv")
