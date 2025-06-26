@@ -1,43 +1,44 @@
 import pandas as pd
 import datetime
+import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
-import os
 
 CSV_FILE = "reminders.csv"
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 SENDER_EMAIL = "recordatoriosfianzas@gmail.com"
 
-def send_reminders():
+def send_reminder(email, name, client_number, expiry_date):
+    message = Mail(
+        from_email=SENDER_EMAIL,
+        to_emails=email,
+        subject="Guarantee Expiry Reminder",
+        plain_text_content=f"Hello,\n\nYour guarantee with client {name} (ID: {client_number}) expires on {expiry_date}.\n\n"
+    )
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        print(f"Email sent to {email}: {response.status_code}")
+    except Exception as e:
+        print(f"Failed to send to {email}: {e}")
+
+def run():
     if not os.path.exists(CSV_FILE):
         print("No reminders.csv file found.")
         return
 
     df = pd.read_csv(CSV_FILE)
-    today = datetime.date.today().strftime('%Y-%m-%d')
-    due = df[df["reminder_date"] == today]
+    today = datetime.datetime.utcnow().date().strftime('%Y-%m-%d')
+    print(f"Checking reminders for {today}")
 
-    print(f"Today's date: {today}")
-    print(f"Found {len(due)} reminders due today.")
-
-    for _, row in due.iterrows():
-        to_email = row["email"]
-        subject = "Reminder: Guarantee Expiration"
-        content = f"Hi,\n\nYour guarantee with client {row['name']} (ID: {row['client_number']}) expires on {row['expiry_date']}."
-
-        message = Mail(
-            from_email=SENDER_EMAIL,
-            to_emails=to_email,
-            subject=subject,
-            plain_text_content=content
-        )
-
-        try:
-            sg = SendGridAPIClient(SENDGRID_API_KEY)
-            sg.send(message)
-            print(f"Email sent to {to_email}")
-        except Exception as e:
-            print(f"Error sending to {to_email}: {e}")
+    for _, row in df.iterrows():
+        if row['reminder_date'] == today:
+            send_reminder(
+                email=row['email'],
+                name=row['name'],
+                client_number=row['client_number'],
+                expiry_date=row['expiry_date']
+            )
 
 if __name__ == "__main__":
-    send_reminders()
+    run()
