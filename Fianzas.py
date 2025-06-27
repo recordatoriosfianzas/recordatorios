@@ -3,11 +3,12 @@ import pandas as pd
 import datetime
 import base64
 import os
+import io
 import requests
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
-# Load secrets from Streamlit Cloud
+# --- Environment Variables ---
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")  # e.g., "username/repo"
@@ -15,13 +16,10 @@ GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH", "reminders.csv")
 SENDER_EMAIL = "recordatoriosfianzas@gmail.com"
 
-# 📤 Function to upload reminders.csv to GitHub
+# --- Upload CSV to GitHub ---
 def upload_csv_to_github(df):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{CSV_FILE_PATH}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-
-    # Get SHA if file exists
-    res = requests.get(url, headers=headers)
+    res = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
     sha = res.json().get("sha") if res.status_code == 200 else None
 
     content = df.to_csv(index=False).encode()
@@ -35,32 +33,32 @@ def upload_csv_to_github(df):
     if sha:
         data["sha"] = sha
 
-    response = requests.put(url, json=data, headers=headers)
-    if response.status_code not in [200, 201]:
-        st.error(f"GitHub upload failed: {response.status_code}")
-        st.text(response.text)
+    res = requests.put(url, json=data, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+    if res.status_code not in [200, 201]:
+        raise Exception(f"GitHub upload failed: {res.status_code} - {res.text}")
 
-# 📬 Email and reminder scheduling
+# --- Schedule Email ---
 def schedule_email(name, client_number, emails, expiry_date):
     reminder_date = expiry_date - datetime.timedelta(days=7)
     send_on = reminder_date.strftime('%Y-%m-%d')
-    today = datetime.date.today().strftime('%Y-%m-%d')
 
     email_list = [e.strip() for e in emails.split(',') if e.strip()]
     failed = []
 
-    # Fetch existing CSV from GitHub
+    # --- Load existing reminders.csv ---
     try:
-        csv_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{CSV_FILE_PATH}"
-        r = requests.get(csv_url)
-        if r.status_code == 200:
-            df = pd.read_csv(pd.compat.StringIO(r.text))
+        res = requests.get(
+            f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{CSV_FILE_PATH}"
+        )
+        if res.status_code == 200:
+            df = pd.read_csv(io.StringIO(res.text))
         else:
-            df = pd.DataFrame()
+            df = pd.DataFrame(columns=["name", "client_number", "email", "expiry_date", "reminder_date"])
     except Exception as e:
-        st.error("Error loading CSV")
-        df = pd.DataFrame()
+        st.error(f"Failed to load CSV from GitHub: {e}")
+        df = pd.DataFrame(columns=["name", "client_number", "email", "expiry_date", "reminder_date"])
 
+    # --- Append entries and send email ---
     for email in email_list:
         new_entry = {
             "name": name,
@@ -71,39 +69,28 @@ def schedule_email(name, client_number, emails, expiry_date):
         }
         df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
 
-        # Optional: send now if testing
-        if send_on == today:
-            try:
-                message = Mail(
-                    from_email=SENDER_EMAIL,
-                    to_emails=email,
-                    subject="Guarantee Expiry Reminder",
-                    plain_text_content=(
-                        f"Hello,\n\nYour guarantee for {name} (ID: {client_number}) "
-                        f"expires on {expiry_date.strftime('%Y-%m-%d')}.\n"
-                    )
+        try:
+            message = Mail(
+                from_email=SENDER_EMAIL,
+                to_emails=email,
+                subject="Guarantee Expiry Reminder",
+                plain_text_content=(
+                    f"Hello,\n\nYour guarantee with client {name} (ID: {client_number}) "
+                    f"expires on {expiry_date.strftime('%Y-%m-%d')}.\n\n"
                 )
-                SendGridAPIClient(SENDGRID_API_KEY).send(message)
-            except Exception as e:
-                failed.append(email)
-                st.error(f"Failed to send to {email}: {e}")
+            )
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+            sg.send(message)
+        except Exception as e:
+            failed.append(email)
+            st.error(f"Failed to send to {email}: {e}")
 
     upload_csv_to_github(df)
     return failed, send_on
 
-# ✅ Streamlit Web UI
+# --- Streamlit UI ---
 st.set_page_config(page_title="Guarantee Reminder Scheduler")
 st.title("📅 Schedule a Guarantee Reminder")
-
-# 🔍 Optional test GitHub access button
-if st.button("🔍 Test GitHub Access"):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{CSV_FILE_PATH}"
-    res = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
-    if res.status_code == 200:
-        st.success("✅ GitHub access confirmed!")
-    else:
-        st.error(f"❌ GitHub access failed: {res.status_code}")
-        st.text(res.text)
 
 name = st.text_input("Client")
 client_number = st.text_input("Guarantee ID")
@@ -114,8 +101,8 @@ if st.button("Schedule"):
     if name and client_number and emails and expiry_date:
         failed_emails, send_on = schedule_email(name, client_number, emails, expiry_date)
         if not failed_emails:
-            st.success(f"✅ Email(s) scheduled for {send_on}.")
+            st.success(f"Email(s) scheduled for {send_on}.")
         else:
-            st.warning(f"⚠️ Failed for: {', '.join(failed_emails)}")
+            st.warning(f"Some emails failed: {', '.join(failed_emails)}")
     else:
-        st.warning("⚠️ Please complete all fields.")
+        st.warning("Please fill in all fields.")
